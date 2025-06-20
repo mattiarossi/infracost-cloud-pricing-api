@@ -161,7 +161,7 @@ const config = {
   ibmCloudApiKey: process.env.IBM_CLOUD_API_KEY,
   region: process.env.CLOUD_REGION || 'local',
   hostname: process.env.HOSTNAME || 'local',
-  version: process.env.IMAGE_VERSION || 'local'
+  version: process.env.IMAGE_VERSION?.split(":")[1] || 'local' 
 };
 
 export default config;
