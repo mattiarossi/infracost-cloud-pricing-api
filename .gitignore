@@ -1,9 +1,7 @@
 /node_modules
 /data
 /creds
-.env
-.env.sh
-.env.local
+.env*
 package-lock.json
 
 # Temp
