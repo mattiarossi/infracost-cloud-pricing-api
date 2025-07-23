@@ -79,7 +79,8 @@
     "yargs": "^17.6.2"
   },
   "overrides": {
-    "minimatch": "^5.1.2"
+    "minimatch": "^5.1.2",
+    "brace-expansion": "^2.0.2"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",
