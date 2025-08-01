@@ -2,6 +2,7 @@ import express, { Application, Request, Response, NextFunction } from 'express';
 import { ApolloServer, ApolloServerOptions, BaseContext } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
+import { ApolloServerPluginCacheControl } from '@apollo/server/plugin/cacheControl';
 import { ApolloServerErrorCode } from '@apollo/server/errors';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { GraphQLError, GraphQLFormattedError } from 'graphql';
@@ -128,6 +129,10 @@ async function createApp<TContext>(
     introspection: false,
     plugins: [
       ApolloServerPluginLandingPageDisabled(),
+      ApolloServerPluginCacheControl({
+        // Set a default maxAge for all fields that don't have explicit hints
+        defaultMaxAge: 600,
+      }),
     ],
     cache: "bounded",
     allowBatchedHttpRequests: true,
