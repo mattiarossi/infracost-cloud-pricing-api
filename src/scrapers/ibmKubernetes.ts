@@ -24,6 +24,11 @@ const lastThresholdAmountPattern = /999999999/;
 const lastThresholdAmount = 'Inf';
 
 // shape of JSON from pricing API
+type ibmProductOptionsJson = {
+  name: string,
+  price: number;
+}
+
 type ibmProductJson = {
   plan_id: string;
   region: string | '';
@@ -47,6 +52,7 @@ type ibmProductJson = {
   billing_type?: string;
   effective_from?: string;
   effective_until?: string;
+  options?: ibmProductOptionsJson[]; 
 };
 
 type ibmTiersJson = {
@@ -71,6 +77,7 @@ export type ibmKubernetesAttributes = {
   serverType?: string;
   billingType?: string;
   country?: string;
+  option: string;
 };
 
 async function scrape(): Promise<void> {
@@ -246,9 +253,20 @@ function parseAttributes(productJson: ibmProductJson): ibmKubernetesAttributes {
     serverType: productJson.server_type,
     billingType: productJson.billing_type,
     country: productJson.country,
+    option: 'none'
   };
 
   return attributes;
+}
+
+function getFirstPrice(prices: Price[]): number {
+  let price: number = 0
+
+  if (prices.length > 0) {
+    price = prices[0].USD? parseFloat(prices[0].USD) : 0
+  }
+
+  return price
 }
 
 /**
@@ -264,7 +282,9 @@ function parseAttributes(productJson: ibmProductJson): ibmKubernetesAttributes {
  * attributes:     | ibmKubernetesAttributes
  * prices:         | Price[]
  */
-function parseIbmProduct(productJson: ibmProductJson): Product {
+function parseIbmProduct(productJson: ibmProductJson): Product[] {
+  const potentialProductList: Product[] = []
+
   const product: Product = {
     productHash: '',
     sku: `${productJson.plan_id}-${productJson.country}-${productJson.currency}-${productJson.flavor}-${productJson.operating_system}-${productJson?.ocp_included ? 'ocp' : 'noocp'}`,
@@ -279,8 +299,44 @@ function parseIbmProduct(productJson: ibmProductJson): Product {
   product.attributes = parseAttributes(productJson);
   product.attributes.ocpIncluded = productJson?.ocp_included ? 'true' : 'false'
   product.prices = parsePrices(product, productJson);
+  potentialProductList.push(product)
 
-  return product;
+  // If a flavor is found to have options, then each option will be added as a new product in our db, using the parent's
+  // attributes to fill out the product's fields.
+  // The price of the OCP license option does not include the hourly price for the compute, however hourly prices 
+  // for ocp computes in our db's are stored with the OCP licensing included. To maintain the way that hourly compute
+  // pricing is used by infracost, the hourly compute price for the flavor will be added to the option's price.
+  productJson.options?.forEach((option) => {
+    const newProduct = structuredClone(product)
+    newProduct.prices = []
+    newProduct.sku = `${productJson.plan_id}-${productJson.country}-${productJson.currency}-${productJson.flavor}-${productJson.operating_system}-${option.name}`
+    newProduct.attributes.option = `${option.name}`
+    // The CLI currently checks for the ocpIncluded attribute
+    // as a string of either 'true' or 'false'when searching for pricing.
+    // to maintain backwards compatibility, and avoid multiple pricing being returned,
+    // options that are not ocp related will set the ocpIncluded field to 'na -> not applicable'
+    if (option.name === 'worker-ocp-license') {
+      newProduct.attributes.ocpIncluded = 'true'
+    } else {
+      newProduct.attributes.ocpIncluded = 'na'
+    }
+    const price: Price = {
+      priceHash: '',
+      purchaseOption: '',
+      tierModel: PricingModels.LINEAR,
+      unit: productJson.unit,
+      USD: (getFirstPrice(product.prices) + option.price).toString(),
+      effectiveDateStart: productJson.effective_from || '',
+      effectiveDateEnd: productJson.effective_until || '',
+    };
+    const priceHash = generatePriceHash(newProduct, price);
+    price.priceHash = priceHash
+    newProduct.prices = [price]
+    newProduct.productHash = generateProductHash(newProduct);
+    potentialProductList.push(newProduct)
+  });
+
+  return potentialProductList;
 }
 
 // pricing for some products that are deprecated may be provided in the response
@@ -302,8 +358,8 @@ function load(filename: string): Promise<void> {
     Object.values(json).forEach((productGroup) => {
       productGroup.forEach((ibmProduct) => {
         if (!isDeprecated(ibmProduct)) {
-          const product = parseIbmProduct(ibmProduct);
-          products.push(product);
+          const expandedProducts = parseIbmProduct(ibmProduct);
+          products.push(...expandedProducts);
         }
       });
     });
