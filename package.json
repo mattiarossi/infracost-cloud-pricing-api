@@ -55,7 +55,7 @@
     "@types/tmp": "^0.2.1",
     "@types/yargs": "^17.0.9",
     "async-mutex": "^0.4.0",
-    "axios": "^1.11.0",
+    "axios": "^1.12.0",
     "copyfiles": "^2.4.1",
     "cors": "^2.8.5",
     "decimal.js": "^10.4.2",
@@ -76,7 +76,7 @@
     "pg-format": "^1.0.4",
     "prettier": "^2.8.1",
     "progress": "^2.0.3",
-    "tmp": "^0.2.1",
+    "tmp": "0.2.4",
     "yargs": "^17.6.2"
   },
   "overrides": {
