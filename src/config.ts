@@ -46,6 +46,7 @@ interface Credentials {
       };
       scheme: string;
       type: string;
+      view_refresh: string[];
     }
   };
   instance_administration_api: {
@@ -65,6 +66,10 @@ let host: string;
 let port: number;
 let cert64: string | undefined;
 let searchPath: string | undefined;
+let viewsToRefresh: string[] = [];
+if (process.env.VIEWS_TO_REFRESH) {
+  viewsToRefresh = process.env.VIEWS_TO_REFRESH.split(',');
+}
 
 async function pg(): Promise<Pool> {
   if (!pgPool) {
@@ -79,6 +84,7 @@ async function pg(): Promise<Pool> {
         cert64 = pgCredentials?.connection.postgres.certificate.certificate_base64;
         searchPath = pgCredentials?.connection.postgres.path;
         database = pgCredentials?.connection.postgres.database || database;
+        config.viewsToRefresh = pgCredentials?.connection.postgres.view_refresh || viewsToRefresh;
       } catch (error: unknown) {
         let message = 'Unknown Error'
         if (error instanceof Error) message = error.message
@@ -165,7 +171,8 @@ const config = {
   ibmCloudApiKey: process.env.IBM_CLOUD_API_KEY,
   region: process.env.CLOUD_REGION || 'local',
   hostname: process.env.HOSTNAME || 'local',
-  version: process.env.IMAGE_VERSION?.split(":")[1] || 'local' 
+  version: process.env.IMAGE_VERSION?.split(":")[1] || 'local',
+  viewsToRefresh: [] as string[]
 };
 
 export default config;
