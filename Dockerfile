@@ -14,6 +14,7 @@ RUN apk add --no-cache bash curl postgresql-client
 
 WORKDIR /usr/src/app
 RUN mkdir -p data/products
+RUN mkdir -p data/cprdata
 
 RUN addgroup -g 1001 -S infracost && \
   adduser -u 1001 -S infracost -G infracost && \

@@ -31,6 +31,7 @@ async function run(): Promise<void> {
 
     await loadFiles(argv.path, client);
 
+    await refreshViews(client);
 
     await client.query('COMMIT');
   } catch (e) {
@@ -42,6 +43,17 @@ async function run(): Promise<void> {
   }
 }
 
+async function refreshViews(client: PoolClient): Promise<void> {
+  if (config.viewsToRefresh.length === 0) {
+    config.logger.info('No views to refresh');
+    return;
+  }
+  
+  for (const viewName of config.viewsToRefresh) {
+    config.logger.info(`Refreshing view: ${viewName}`);
+    await client.query(`REFRESH MATERIALIZED VIEW ${viewName} WITH DATA`);
+  }
+}
 
 async function loadFiles(path: string, client: PoolClient): Promise<void> {
   const filenames = glob.sync(`${path}/*.csv.gz`);
