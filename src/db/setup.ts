@@ -27,6 +27,12 @@ export async function createProductsTable(
     )
   );
 }
+export async function truncateProductsTable(
+  client: PoolClient,
+  tableName: string
+): Promise<void> {
+  await client.query(format(`TRUNCATE TABLE %I`, tableName));
+}
 
 export async function createProductsTableIndex(
   client: PoolClient,

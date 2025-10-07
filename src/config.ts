@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import * as loggerUtils from '@console/console-platform-log4js-utils';
+import * as log4js from 'log4js';
 import NodeCache from 'node-cache';
 import { Pool, PoolConfig } from 'pg';
 import tmp from 'tmp';
@@ -59,11 +59,12 @@ const jsonPgCredentials = process.env.POSTGRES_CREDENTIALS;
 
 let pgPool: Pool;
 let user: string;
-const database = process.env.POSTGRES_DB || 'cloud_pricing';
+let database = process.env.POSTGRES_DB || 'cloud_pricing';
 let password: string;
 let host: string;
 let port: number;
 let cert64: string | undefined;
+let searchPath: string | undefined;
 
 async function pg(): Promise<Pool> {
   if (!pgPool) {
@@ -76,6 +77,8 @@ async function pg(): Promise<Pool> {
         host = pgCredentials?.connection.postgres.hosts[0].hostname;
         port = pgCredentials?.connection.postgres.hosts[0].port;
         cert64 = pgCredentials?.connection.postgres.certificate.certificate_base64;
+        searchPath = pgCredentials?.connection.postgres.path;
+        database = pgCredentials?.connection.postgres.database || database;
       } catch (error: unknown) {
         let message = 'Unknown Error'
         if (error instanceof Error) message = error.message
@@ -98,6 +101,7 @@ async function pg(): Promise<Pool> {
       port,
       host,
       max: Number(process.env.POSTGRES_MAX_CLIENTS) || 10,
+      options: searchPath?`--search_path=${searchPath}`:undefined
     };
 
     if (process.env.POSTGRES_URI) {
@@ -114,7 +118,7 @@ async function pg(): Promise<Pool> {
         ca: cert
       };
     }
-
+    console.log('Connecting to PG with config',JSON.stringify({...poolConfig, password: '******'}))
     pgPool = new Pool(poolConfig);
   }
   return pgPool;
@@ -132,14 +136,15 @@ function generateGcpKeyFile(): string {
   return tmpFile.name;
 }
 
-const logger = loggerUtils.getLogger('cloud-pricing-api');
-
+const logger = log4js.getLogger('cloud-pricing-api');
+logger.level = 'INFO';
 const cache = new NodeCache();
 
 const config = {
   logger,
   pg,
   productTableName: 'products',
+  productTableNameCprData: 'aws_ec2_prices',
   statsTableName: 'stats',
   installsTableName: 'installs',
   infracostPricingApiEndpoint:
@@ -149,8 +154,7 @@ const config = {
     process.env.INFRACOST_DASHBOARD_API_ENDPOINT ||
     'https://dashboard.api.infracost.io',
   disableTelemetry:
-    process.env.DISABLE_TELEMETRY?.toLowerCase() === 'true' ||
-    process.env.DISABLE_TELEMETRY === '1',
+    true,
   infracostAPIKey: process.env.INFRACOST_API_KEY,
   selfHostedInfracostAPIKey: process.env.SELF_HOSTED_INFRACOST_API_KEY,
   cache,
