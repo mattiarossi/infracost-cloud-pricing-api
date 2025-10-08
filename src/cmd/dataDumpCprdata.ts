@@ -11,23 +11,25 @@ import config from '../config';
 async function run(): Promise<void> {
   const argv = await yargs
     .usage(
-      'Usage: $0 --out=[output file, default: ./data/cprdata/aws_ec2_prices.csv.gz ]'
+      'Usage: $0 --out=[output directory, default: ./data/cprdata] --table=[table name, default: aws_ec2_prices]'
     )
     .options({
-      out: { type: 'string', default: './data/cprdata/aws_ec2_prices.csv.gz' },
+      out: { type: 'string', default: './data/cprdata' },
+      table: { type: 'string', default: 'aws_ec2_prices' },
     }).argv;
 
   const pool = await config.pg();
   const client = await pool.connect();
   try {
-    config.logger.info(`Dumping to file: ${argv.out}`);
-    await dumpFile(client, argv.out);
+    const outputFile = `${argv.out}/${argv.table}.csv.gz`;
+    config.logger.info(`Dumping table '${argv.table}' to file: ${outputFile}`);
+    await dumpFile(client, outputFile, argv.table);
   } finally {
     client.release();
   }
 }
 
-async function dumpFile(client: PoolClient, outfile: string): Promise<void> {
+async function dumpFile(client: PoolClient, outfile: string, tableName: string): Promise<void> {
   const promisifiedPipeline = promisify(pipeline);
 
   const copyStream = client.query(
@@ -39,7 +41,7 @@ async function dumpFile(client: PoolClient, outfile: string): Promise<void> {
       HEADER true,
       DELIMITER ','
     )`,
-        config.productTableNameCprData
+        tableName
       )
     )
   );
