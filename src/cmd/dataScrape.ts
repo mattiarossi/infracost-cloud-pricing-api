@@ -8,6 +8,7 @@ import gcpMachineTypes from '../scrapers/gcpMachineTypes';
 import ibmKubernetes from '../scrapers/ibmKubernetes';
 import ibmCatalog from '../scrapers/ibmCatalog';
 import { setPriceUpdateFailed, setPriceUpdateSuccessful } from '../stats/stats';
+import { refreshViews } from './dataLoadCprdata';
 
 interface ScraperConfig {
   vendor: string;
@@ -82,6 +83,9 @@ async function run(): Promise<void> {
 
   if (success) {
     await setPriceUpdateSuccessful();
+    const pool = await config.pg();
+    const client = await pool.connect();
+    await refreshViews(client);
   } else {
     await setPriceUpdateFailed();
   }
@@ -97,3 +101,4 @@ run()
     config.logger.error(err);
     process.exit(1);
   });
+
