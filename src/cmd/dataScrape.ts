@@ -8,7 +8,7 @@ import gcpMachineTypes from '../scrapers/gcpMachineTypes';
 import ibmKubernetes from '../scrapers/ibmKubernetes';
 import ibmCatalog from '../scrapers/ibmCatalog';
 import { setPriceUpdateFailed, setPriceUpdateSuccessful } from '../stats/stats';
-import { refreshViews } from './dataLoadCprdata';
+import { refreshViews } from '../db/refreshview';
 
 interface ScraperConfig {
   vendor: string;
