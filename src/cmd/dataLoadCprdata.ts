@@ -13,6 +13,7 @@ import config from '../config';
 import {
   truncateProductsTable,
 } from '../db/setup';
+import { refreshViews } from '../db/refreshview';
 
 async function run(): Promise<void> {
   const pool = await config.pg();
@@ -48,17 +49,7 @@ async function run(): Promise<void> {
   }
 }
 
-export async function refreshViews(client: PoolClient): Promise<void> {
-  if (config.viewsToRefresh.length === 0) {
-    config.logger.info('No views to refresh');
-    return;
-  }
-  
-  for (const viewName of config.viewsToRefresh) {
-    config.logger.info(`Refreshing view: ${viewName}`);
-    await client.query(`REFRESH MATERIALIZED VIEW ${viewName} WITH DATA`);
-  }
-}
+
 
 async function loadFiles(dataPath: string, client: PoolClient): Promise<void> {
   const filenames = glob.sync(`${dataPath}/*.csv.gz`);

@@ -41,6 +41,7 @@ interface Credentials {
       database: string;
       hosts: Array<CredentialHost>;
       path: string;
+      path_views: string;
       query_options: {
         sslmode: string;
       };
@@ -66,6 +67,7 @@ let host: string;
 let port: number;
 let cert64: string | undefined;
 let searchPath: string | undefined;
+let searchPathViews: string | undefined;
 let viewsToRefresh: string[] = [];
 if (process.env.VIEWS_TO_REFRESH) {
   viewsToRefresh = process.env.VIEWS_TO_REFRESH.split(',');
@@ -82,9 +84,10 @@ async function pg(): Promise<Pool> {
         host = pgCredentials?.connection.postgres.hosts[0].hostname;
         port = pgCredentials?.connection.postgres.hosts[0].port;
         cert64 = pgCredentials?.connection.postgres.certificate.certificate_base64;
-        searchPath = pgCredentials?.connection.postgres.path;
+        searchPath = pgCredentials?.connection.postgres.path || 'public';
         database = pgCredentials?.connection.postgres.database || database;
         config.viewsToRefresh = pgCredentials?.connection.postgres.view_refresh || viewsToRefresh;
+        searchPathViews = pgCredentials?.connection.postgres.path_views || searchPath;
       } catch (error: unknown) {
         let message = 'Unknown Error'
         if (error instanceof Error) message = error.message
@@ -107,7 +110,7 @@ async function pg(): Promise<Pool> {
       port,
       host,
       max: Number(process.env.POSTGRES_MAX_CLIENTS) || 10,
-      options: searchPath?`--search_path=${searchPath}`:undefined
+      options: searchPath ? `--search_path=${searchPath}${searchPathViews ? `,${searchPathViews}` : ``}` : undefined
     };
 
     if (process.env.POSTGRES_URI) {
@@ -172,7 +175,7 @@ const config = {
   region: process.env.CLOUD_REGION || 'local',
   hostname: process.env.HOSTNAME || 'local',
   version: process.env.IMAGE_VERSION?.split(":")[1] || 'local',
-  viewsToRefresh: [] as string[]
+  viewsToRefresh: [] as string[],
 };
 
 export default config;
