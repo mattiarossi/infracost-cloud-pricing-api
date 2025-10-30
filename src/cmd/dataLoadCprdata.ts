@@ -19,17 +19,22 @@ async function run(): Promise<void> {
 
   const argv = await yargs
     .usage(
-      'Usage: $0 --path=[ location of *.csv.gz files, default: ./data/cprdata ]'
+      'Usage: $0 --path=[ location of *.csv.gz files, default: ./data/cprdata ] --skip-data-load=[ skip data loading and only refresh views ]'
     )
     .options({
       path: { type: 'string', default: './data/cprdata' },
+      'skip-data-load': { type: 'boolean', default: false, description: 'Skip data loading and only refresh materialized views' },
     }).argv;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    await loadFiles(argv.path, client);
+    if (!argv['skip-data-load']) {
+      await loadFiles(argv.path, client);
+    } else {
+      config.logger.info('Skipping data loading as requested');
+    }
 
     await refreshViews(client);
 
@@ -43,7 +48,7 @@ async function run(): Promise<void> {
   }
 }
 
-async function refreshViews(client: PoolClient): Promise<void> {
+export async function refreshViews(client: PoolClient): Promise<void> {
   if (config.viewsToRefresh.length === 0) {
     config.logger.info('No views to refresh');
     return;
