@@ -158,10 +158,10 @@ const config = {
   installsTableName: 'installs',
   infracostPricingApiEndpoint:
     process.env.INFRACOST_PRICING_API_ENDPOINT ||
-    'https://pricing.api.infracost.io',
+    'https://pricing.api.github.io',
   infracostDashboardApiEndpoint:
     process.env.INFRACOST_DASHBOARD_API_ENDPOINT ||
-    'https://dashboard.api.infracost.io',
+    'https://dashboard.api.github.io',
   disableTelemetry:
     true,
   infracostAPIKey: process.env.INFRACOST_API_KEY,

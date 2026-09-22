@@ -29,4 +29,12 @@ export type Price = {
   country?: string,
   currency?: string,
   partNumber?: string,
+  savingsPlanSku?: string,
+  discountedSku?: string,
+  discountedUsageType?: string,
+  discountedOperation?: string,
+  discountedServiceCode?: string,
+  discountedRegionCode?: string,
+  discountedInstanceType?: string,
+  rateCode?: string,
 };

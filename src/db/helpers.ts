@@ -21,7 +21,19 @@ export function generateProductHash(product: Product): string {
 export function generatePriceHash(product: Product, price: Price): string {
   let hashFields: string[];
   // keep AWS price hashes the same so Infracost tests don't break
-  if (product.vendorName === 'aws') {
+  if (product.vendorName === 'aws' && price.purchaseOption === 'savings_plan') {
+    // Savings-plan rates need savingsPlanSku in the hash because the same
+    // target product can have rates from different plan types (e.g.
+    // ComputeSavingsPlans vs EC2InstanceSavingsPlans) that share the same
+    // termLength + termPurchaseOption but at different prices.
+    hashFields = [
+      'purchaseOption',
+      'unit',
+      'termLength',
+      'termPurchaseOption',
+      'savingsPlanSku',
+    ];
+  } else if (product.vendorName === 'aws') {
     hashFields = [
       'purchaseOption',
       'unit',

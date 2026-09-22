@@ -345,7 +345,7 @@ function isDeprecated(productJson: ibmProductJson): boolean {
   return !!productJson?.deprecated;
 }
 
-function load(filename: string): Promise<void> {
+async function load(filename: string): Promise<void> {
   try {
     console.log(`loading ${filename}`);
 
@@ -363,7 +363,7 @@ function load(filename: string): Promise<void> {
         }
       });
     });
-    return upsertProducts(products);
+    await upsertProducts(products);
   } catch (e: any) {
     config.logger.error(`Skipping file ${filename} due to error ${e}`);
     config.logger.error(e.stack);
