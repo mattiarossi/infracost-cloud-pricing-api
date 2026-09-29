@@ -204,7 +204,6 @@ const regionMapping: { [key: string]: string } = {
   'Middle East (UAE)': 'me-central-1',
   'Israel (Tel Aviv)': 'il-central-1',
   'Africa (Cape Town)': 'af-south-1',
-  'Asia Pacific (Taipei)': 'ap-east-2',
 };
 
 
