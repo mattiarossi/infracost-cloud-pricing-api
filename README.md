@@ -198,7 +198,7 @@ The `awsBulk` scraper downloads and ingests AWS public pricing data, including s
 
 ### File naming conventions
 
-Downloaded files are stored in the `data/` directory and include the **publication timestamp** extracted from the AWS pricing URL. This ensures that a new AWS pricing release produces a new file name and triggers a fresh download and load, without requiring a manual cleanup.
+Downloaded files are stored in the `data/` directory and include the **publication timestamp** of the AWS pricing release they hold. For a region-split service and for a savings plan the timestamp is the version segment of the regional URL. For a single-file service — whose `currentVersionUrl` is `/current/index.json` and carries none — it is `currentVersion` from the offer's version index (`versionIndexUrl`), and the file is fetched from that publication's own URL. This ensures that a new AWS pricing release produces a new file name and triggers a fresh download and load, without requiring a manual cleanup; a file name without a timestamp is refused.
 
 | Type | Example filename |
 |---|---|
@@ -206,7 +206,7 @@ Downloaded files are stored in the `data/` directory and include the **publicati
 | Region-split service (e.g. EC2) | `data/aws-AmazonEC2-us-east-1-20260224205727.json` |
 | Savings Plan | `data/aws-AWSComputeSavingsPlan-savings-plan-us-east-1-20260224214300.json` |
 
-When a new version is downloaded, any previously-downloaded file for the same service/region with a different timestamp is automatically deleted.
+When a new version is downloaded, any previously-downloaded file for the same service/region with a different timestamp is automatically deleted, as is a `-current.json` file (the version-less name earlier releases of the scraper wrote for every single-file service) together with its `.loaded` marker.
 
 ### Load markers (`.loaded` sentinel files)
 

@@ -13,15 +13,21 @@ const indexUrl = '/offers/v1.0/aws/index.json';
 const chinaIndexUrl = '/offers/v1.0/cn/index.json';
 const splitByRegions = ['AmazonEC2'];
 
-/** Extract the publication timestamp from a versioned AWS pricing URL, e.g. /offers/v1.0/aws/AmazonEC2/20260224205727/us-east-1/index.json → '20260224205727' */
+/** Extract the publication timestamp from a versioned AWS pricing URL, e.g. /offers/v1.0/aws/AmazonEC2/20260224205727/us-east-1/index.json → '20260224205727'.
+ *  A URL without one is refused: a file named without its version is found by the existence check on every later run and never refreshed. */
 function extractVersion(url: string): string {
   const match = url.match(/\/(\d{14})\//);
-  return match ? match[1] : 'current';
+  if (!match) {
+    throw new Error(`no publication version in ${url}: a file named without one would never be refreshed`);
+  }
+  return match[1];
 }
 
-/** Delete any previously downloaded files for the same service/region that have a different version timestamp. */
+/** Delete any previously downloaded files for the same service/region that have a different version timestamp,
+ *  and the version-less `-current` file earlier releases wrote for every single-file service (left in place it
+ *  would sort after the versioned file and, under --force, load after it). */
 function cleanupOldVersions(currentFilename: string): void {
-  const pattern = currentFilename.replace(/\d{14}/, '??????????????');
+  const pattern = currentFilename.replace(/\d{14}/, '{??????????????,current}');
   const siblings = glob.sync(pattern);
   for (const sibling of siblings) {
     if (sibling !== currentFilename) {
@@ -388,9 +394,16 @@ async function downloadAll(stats: RunStats): Promise<Map<string, string>> {
 
 interface Offer {
   offerCode: string;
+  versionIndexUrl: string;
   currentRegionIndexUrl: string;
   currentVersionUrl: string;
   currentSavingsPlanIndexUrl: string;
+}
+
+/** An offer's version index (`versionIndexUrl`): every publication of the offer with its own URL, and which one is current. */
+interface VersionIndex {
+  currentVersion: string;
+  versions: { [version: string]: { offerVersionUrl: string } };
 }
 
 interface Region {
@@ -435,17 +448,25 @@ async function downloadService(offer: Offer, stats: RunStats, prefix?: string) {
       stats.download.standardDownloaded++;
     }
   } else {
-    const version = extractVersion(offer.currentVersionUrl);
+    // currentVersionUrl is `/<offer>/current/index.json` for every offer of both partitions and
+    // carries no publication version; the offer's version index names the current one, and the
+    // file is named with it and fetched from that publication's own URL
+    const versionIndex = <VersionIndex>(await axios.get(`${baseUrl}${offer.versionIndexUrl}`)).data;
+    const current = versionIndex.versions[versionIndex.currentVersion];
+    if (!current) {
+      throw new Error(`${offer.offerCode}: version index names ${versionIndex.currentVersion} as current but lists no such version`);
+    }
+    const version = extractVersion(current.offerVersionUrl);
     const filename = `data/${prefix}-${offer.offerCode}-${version}.json`;
     if (fs.existsSync(filename)) {
       config.logger.info(`Skipping already downloaded ${filename}`);
       stats.download.standardCached++;
       return;
     }
-    config.logger.info(`Downloading ${offer.currentVersionUrl}`);
+    config.logger.info(`Downloading ${current.offerVersionUrl}`);
     const resp = await axios({
       method: 'get',
-      url: `${baseUrl}${offer.currentVersionUrl}`,
+      url: `${baseUrl}${current.offerVersionUrl}`,
       responseType: 'stream',
     });
     const writer = fs.createWriteStream(filename);
