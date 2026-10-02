@@ -303,7 +303,7 @@ interface RunStats {
     savingsPlanIndexesSkipped: number;
   };
   load: {
-    standard: { processed: number; cached: number; filtered: number; errors: number; productsUpserted: number };
+    standard: { processed: number; cached: number; filtered: number; errors: number; productsUpserted: number; productsSkippedNoService: number };
     savingsPlan: { processed: number; cached: number; filtered: number; errors: number; skippedNoProducts: number; productsUpdated: number; ratesMatched: number; ratesSkipped: number };
   };
 }
@@ -312,7 +312,7 @@ function createStats(): RunStats {
   return {
     download: { standardDownloaded: 0, standardCached: 0, savingsPlanDownloaded: 0, savingsPlanCached: 0, savingsPlanZonesSkipped: 0, savingsPlanIndexesSkipped: 0 },
     load: {
-      standard: { processed: 0, cached: 0, filtered: 0, errors: 0, productsUpserted: 0 },
+      standard: { processed: 0, cached: 0, filtered: 0, errors: 0, productsUpserted: 0, productsSkippedNoService: 0 },
       savingsPlan: { processed: 0, cached: 0, filtered: 0, errors: 0, skippedNoProducts: 0, productsUpdated: 0, ratesMatched: 0, ratesSkipped: 0 },
     },
   };
@@ -331,6 +331,7 @@ function printSummary(stats: RunStats): void {
   config.logger.info('LOAD — Standard pricing');
   config.logger.info(`  Files               : ${std.processed} processed, ${std.cached} cached, ${std.filtered} filtered, ${std.errors} errors`);
   config.logger.info(`  Products upserted   : ${std.productsUpserted.toLocaleString()}`);
+  config.logger.info(`  Products skipped    : ${std.productsSkippedNoService.toLocaleString()} (no servicecode)`);
   config.logger.info('LOAD — Savings plans');
   config.logger.info(`  Files               : ${sp.processed} processed, ${sp.cached} cached, ${sp.filtered} filtered, ${sp.errors} errors, ${sp.skippedNoProducts} skipped (no standard products)`);
   config.logger.info(`  Products updated    : ${sp.productsUpdated.toLocaleString()}`);
@@ -647,7 +648,16 @@ async function processFile(filename: string, stats: RunStats): Promise<void> {
 
   const serviceJson = <ServiceJson>json;
 
-  const products = Object.values(serviceJson.products).map((productJson) => {
+  // a product without attributes.servicecode has no value for the NOT NULL service column: skipped
+  // with one warning per file instead of failing the file (some offers carry it on no product)
+  const productJsons = Object.values(serviceJson.products);
+  const withService = productJsons.filter((p) => p.attributes && p.attributes.servicecode);
+  const skipped = productJsons.length - withService.length;
+  if (skipped > 0) {
+    config.logger.warn(`${filename}: ${skipped} of ${productJsons.length} products carry no attributes.servicecode and are skipped`);
+    stats.load.standard.productsSkippedNoService += skipped;
+  }
+  const products = withService.map((productJson) => {
     const product = parseProduct(productJson);
 
     if (serviceJson.terms.OnDemand && serviceJson.terms.OnDemand[product.sku]) {
