@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import zlib from 'zlib';
 import { to as copyTo } from 'pg-copy-streams';
 import yargs from 'yargs';
@@ -11,10 +12,10 @@ import config from '../config';
 async function run(): Promise<void> {
   const argv = await yargs
     .usage(
-      'Usage: $0 --out=[output file, default: ./data/products/products.csv.gz ]'
+      'Usage: $0 --out=[output file, default: <data directory>/products/products.csv.gz ]'
     )
     .options({
-      out: { type: 'string', default: './data/products/products.csv.gz' },
+      out: { type: 'string', default: path.join(config.dataDir, 'products', 'products.csv.gz') },
     }).argv;
 
   const pool = await config.pg();

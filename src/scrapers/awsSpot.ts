@@ -13,16 +13,6 @@ const operatingSystemMapping: { [key: string]: string } = {
   mswin: 'Windows',
 };
 
-const regionMapping: { [key: string]: string } = {
-  'us-east': 'us-east-1',
-  'us-west': 'us-west-1',
-  'eu-ireland': 'eu-west-1',
-  'apac-sin': 'ap-southeast-1',
-  'apac-syd': 'ap-southeast-2',
-  'apac-tokyo': 'ap-northeast-1',
-  'us-west-2-lax-1a': 'us-west-2-lax-1',
-};
-
 type SpotJson = {
   config: {
     regions: Array<{
@@ -63,7 +53,8 @@ async function loadEc2(jsonData: SpotJson) {
   const now = new Date();
 
   for (const regionData of jsonData.config.regions) {
-    const region = regionMapping[regionData.region] || regionData.region;
+    // spot.js names every region and zone by its code, the code the products carry
+    const region = regionData.region;
 
     for (const sizeData of _.flatten(
       _.map(regionData.instanceTypes, 'sizes')

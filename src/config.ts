@@ -9,16 +9,16 @@ import path from 'path';
 dotenv.config({ path: '.env.local' });
 dotenv.config();
 
-const createPaths = [
-  path.join(__dirname, '../data'),
-  path.join(__dirname, '../data/products'),
-];
+/**
+ * where the scrapers keep their downloaded files and load markers, and where the dump and load
+ * commands write and read by default: CLOUD_PRICING_DATA_DIR, else data/ under the working
+ * directory (the directory every npm script of this package runs in).
+ */
+const dataDir = path.resolve(process.env.CLOUD_PRICING_DATA_DIR || 'data');
 
-createPaths.forEach((path) => {
-  if (!fs.existsSync(path)) {
-    fs.mkdirSync(path);
-  }
-});
+for (const dir of [dataDir, path.join(dataDir, 'products')]) {
+  fs.mkdirSync(dir, { recursive: true });
+}
 
 interface CredentialHost {
   hostname: string;
@@ -176,6 +176,7 @@ const config = {
   hostname: process.env.HOSTNAME || 'local',
   version: process.env.IMAGE_VERSION?.split(":")[1] || 'local',
   viewsToRefresh: [] as string[],
+  dataDir,
 };
 
 export default config;

@@ -22,10 +22,10 @@ async function run(): Promise<void> {
 
   const argv = await yargs
     .usage(
-      'Usage: $0 --path=[ location of *.csv.gz files, default: ./data/products ]'
+      'Usage: $0 --path=[ location of *.csv.gz files, default: <data directory>/products ]'
     )
     .options({
-      path: { type: 'string', default: './data/products' },
+      path: { type: 'string', default: `${config.dataDir}/products` },
     }).argv;
 
   const client = await pool.connect();

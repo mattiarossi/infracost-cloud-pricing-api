@@ -6,7 +6,7 @@ import path from 'path';
 
 const batchSize = 1000;
 
-const sqlLogPath = path.join(process.cwd(), 'data', 'sql_debug.log');
+const sqlLogPath = path.join(config.dataDir, 'sql_debug.log');
 
 function logSql(label: string, sql: string): void {
   const entry = `-- [${new Date().toISOString()}] ${label}\n${sql}\n\n`;

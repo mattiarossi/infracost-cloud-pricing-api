@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import axios, { AxiosResponse } from 'axios';
 import type { Product, Price } from '../db/types';
 import { generateProductHash, generatePriceHash } from '../db/helpers';
@@ -13,7 +14,7 @@ const PROVIDER = 'vpc-gen2'
 const REGIONS = ['jp-tok','au-syd', 'br-sao', 'ca-tor', 'eu-de', 'eu-es', 'eu-fr2', 'jp-osa', 'eu-gb', 'us-east', 'us-south'];
 // possible platforms are 'kube', 'openshift', 'addons', and 'dhost'
 const PLATFORMS = ['kube', 'openshift'];
-const dataFolder = `data/`
+const dataFolder = config.dataDir;
 const FILE_PREFIX = `ibmkube`;
 const RETRY_DELAY_MS = 30000;
 const MAX_RETRIES = 3;
@@ -135,7 +136,7 @@ async function download(platform: string, provider: string, region:string): Prom
   } while (!success && attempts < MAX_RETRIES);
 
   try {
-    const filename=`${dataFolder}${FILE_PREFIX}-${provider}-${platform}-${region}.json`
+    const filename = path.join(dataFolder, `${FILE_PREFIX}-${provider}-${platform}-${region}.json`)
     const writer = fs.createWriteStream(filename);
     await new Promise((resolve, reject) => {
       if (!resp) {
@@ -372,12 +373,11 @@ async function load(filename: string): Promise<void> {
 }
 
 async function loadAll(filePrefix: string): Promise<void[]> {
-  const dataFolder = './data';
   const loadPromises: Promise<void>[] = []
 
   fs.readdirSync(dataFolder).forEach(filename => {
     if (filename.startsWith(filePrefix)) {
-      loadPromises.push(load(`${dataFolder}/${filename}`))
+      loadPromises.push(load(path.join(dataFolder, filename)))
     }
   });
   return Promise.all(loadPromises)

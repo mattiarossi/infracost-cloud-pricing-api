@@ -114,6 +114,7 @@ The following environment variables can be set in your `.env` file (or passed di
 | `POSTGRES_PASSWORD` | *(empty)* | PostgreSQL password. |
 | `POSTGRES_DB` | `cloud_pricing` | PostgreSQL database name. |
 | `POSTGRES_CREDENTIALS` | — | JSON credentials blob for managed PostgreSQL instances. When set, individual `POSTGRES_*` variables are ignored. See [`POSTGRES_CREDENTIALS` format](#postgres_credentials-format) for the expected structure. |
+| `CLOUD_PRICING_DATA_DIR` | `./data` | The directory the scrapers download into and keep their `.loaded` markers in, and the default directory of the dump and load commands. Created when absent. |
 | `INFRACOST_PRICING_API_ENDPOINT` | `https://pricing.api.github.io` | Base URL of the pricing API that the service exposes and refers to internally. Override this when running behind a reverse proxy or when pointing the API at a different upstream. |
 | `INFRACOST_DASHBOARD_API_ENDPOINT` | `https://dashboard.api.github.io` | Base URL of the dashboard/telemetry API. Override to redirect dashboard calls to a different endpoint (e.g. an internal proxy). |
 | `DISABLE_TELEMETRY` | `false` | Set to `true` to opt-out of usage telemetry. |
@@ -198,7 +199,7 @@ The `awsBulk` scraper downloads and ingests AWS public pricing data, including s
 
 ### File naming conventions
 
-Downloaded files are stored in the `data/` directory and include the **publication timestamp** of the AWS pricing release they hold. For a region-split service and for a savings plan the timestamp is the version segment of the regional URL. For a single-file service — whose `currentVersionUrl` is `/current/index.json` and carries none — it is `currentVersion` from the offer's version index (`versionIndexUrl`), and the file is fetched from that publication's own URL. This ensures that a new AWS pricing release produces a new file name and triggers a fresh download and load, without requiring a manual cleanup; a file name without a timestamp is refused.
+Downloaded files are stored in the data directory (`CLOUD_PRICING_DATA_DIR`, default `./data`) and include the **publication timestamp** of the AWS pricing release they hold. For a region-split service and for a savings plan the timestamp is the version segment of the regional URL. For a single-file service — whose `currentVersionUrl` is `/current/index.json` and carries none — it is `currentVersion` from the offer's version index (`versionIndexUrl`), and the file is fetched from that publication's own URL. This ensures that a new AWS pricing release produces a new file name and triggers a fresh download and load, without requiring a manual cleanup; a file name without a timestamp is refused.
 
 | Type | Example filename |
 |---|---|
@@ -223,6 +224,15 @@ For AWS services that support Savings Plans (e.g. EC2, RDS, EKS, Lambda), `curre
 
 Savings plan prices carry extra fields on the `Price` object: `savingsPlanSku`, `discountedSku`, `discountedUsageType`, `discountedOperation`, `discountedServiceCode`, `discountedRegionCode`, `discountedInstanceType`, and `rateCode`.
 
+### Region codes
+
+A product's `region` is the `regionCode` the price list gives it: a Region (`us-east-1`), a Local Zone
+(`us-east-1-bos-1`) or a Wavelength Zone (`eu-west-2-wl1-lon1`), so a region or zone AWS opens loads with no
+change here. A product priced across regions (data transfer, location `Any`) carries no code and is stored
+under the region `aws-global`; the run summary counts them (`Products global`). Savings-plan files of Local
+and Wavelength Zones are not downloaded. A product already loaded keeps its stored region until its file
+loads again (`--force`).
+
 ### CLI flags
 
 The scraper accepts the following command-line flags to control which files are (re-)loaded on a given run. These are especially useful after a partial failure or when you need to force-reload a subset of the data.
@@ -233,6 +243,8 @@ The scraper accepts the following command-line flags to control which files are 
 | `--only-standard` | Process only **standard** pricing files (on-demand / reserved); savings plan files are skipped |
 | `--only-savings-plan` | Process only **savings plan** files; standard pricing files are skipped |
 | `--services <list>` / `-s <list>` | Comma-separated list of AWS offer codes to process; all others are skipped |
+| `--testing` | One file per offer: every single-file offer, and of a region-split (EC2) or savings-plan offer only the file of one Region (`us-east-1`); the China partition is not read. For validation runs; a testing run that loads every file records a successful update like any other |
+| `--testing-region <code>` | The Region a `--testing` run takes instead of `us-east-1` |
 
 The `--services` filter is matched case-insensitively against the offer code embedded in the filename (e.g. `AmazonEC2`, `AmazonRDS`, `AWSComputeSavingsPlan`).
 
@@ -257,6 +269,17 @@ npm run job:update -- --only-standard --services AmazonEC2
 # Process only the Compute Savings Plan data
 npm run job:update -- --only-savings-plan --services AWSComputeSavingsPlan
 ```
+
+### The run's outcome
+
+`npm run data:scrape` (built) or `npm run data:scrape:dev` (from source) runs the scrapers `--only` selects
+(`--only aws:bulk`; every scraper when absent), with their own flags above. The stats row records the update
+as not successful when the run starts and as successful only when every selected scraper finished and none
+reported a file it could not load, so a failed or interrupted run keeps the time of the last successful
+update. `--summary <file>` writes each scraper's outcome as JSON: its error, or its result (for `aws:bulk`,
+the run statistics and every file that failed to load with its error). The command exits 1 when a scraper
+stopped or a file failed to load; a file that failed carries no `.loaded` marker and loads on the next run.
+A scraper's code is loaded only when it runs.
 
 ---
 

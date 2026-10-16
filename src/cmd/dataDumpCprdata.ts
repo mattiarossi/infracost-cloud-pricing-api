@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import zlib from 'zlib';
 import { to as copyTo } from 'pg-copy-streams';
 import yargs from 'yargs';
@@ -11,10 +12,10 @@ import config from '../config';
 async function run(): Promise<void> {
   const argv = await yargs
     .usage(
-      'Usage: $0 --out=[output directory, default: ./data/cprdata] --table=[table name, default: aws_ec2_prices]'
+      'Usage: $0 --out=[output directory, default: <data directory>/cprdata] --table=[table name, default: aws_ec2_prices]'
     )
     .options({
-      out: { type: 'string', default: './data/cprdata' },
+      out: { type: 'string', default: path.join(config.dataDir, 'cprdata') },
       table: { type: 'string', default: 'aws_ec2_prices' },
     }).argv;
 

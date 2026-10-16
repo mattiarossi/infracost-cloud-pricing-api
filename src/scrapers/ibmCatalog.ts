@@ -3,6 +3,7 @@ import GlobalCatalogV1, {
 } from '@ibm-cloud/platform-services/global-catalog/v1';
 import { IamTokenManager } from '@ibm-cloud/platform-services/auth';
 import { writeFile } from 'fs/promises';
+import path from 'path';
 import _ from 'lodash';
 import axios, { AxiosInstance } from 'axios';
 
@@ -12,10 +13,10 @@ import addProducts from '../db/add';
 import config from '../config';
 
 const DEBUG = false;
-const saasProductFileName = `data/ibm-catalog-saas-products.json`;
-const iaasProductFileName = `data/ibm-catalog-iaas-products.json`;
-const platformProductFileName = `data/ibm-catalog-platform-products.json`;
-const compositeProductFileName = `data/ibm-catalog-composite-products.json`;
+const saasProductFileName = path.join(config.dataDir, 'ibm-catalog-saas-products.json');
+const iaasProductFileName = path.join(config.dataDir, 'ibm-catalog-iaas-products.json');
+const platformProductFileName = path.join(config.dataDir, 'ibm-catalog-platform-products.json');
+const compositeProductFileName = path.join(config.dataDir, 'ibm-catalog-composite-products.json');
 
 const baseURL = 'https://globalcatalog.cloud.ibm.com/api/v1';
 

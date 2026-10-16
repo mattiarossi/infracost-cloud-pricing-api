@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import axios, { AxiosResponse } from 'axios';
 import glob from 'glob';
 import config from '../config';
@@ -129,7 +130,7 @@ async function downloadService(service: ServiceJson): Promise<void> {
     let filename = `gcp-${service.displayName}-${pageNum}`;
     filename = filename.replace(/\//g, '-');
     filename = filename.replace(/\./g, '-');
-    filename = `data/${filename}.json`;
+    filename = path.join(config.dataDir, `${filename}.json`);
     const writer = fs.createWriteStream(filename);
     resp.data.pipe(writer);
     await new Promise((resolve) => {
@@ -151,7 +152,7 @@ function sleep(ms: number) {
 }
 
 async function loadAll(): Promise<void> {
-  for (const filename of glob.sync('data/gcp-*.json')) {
+  for (const filename of glob.sync('gcp-*.json', { cwd: config.dataDir, absolute: true })) {
     config.logger.info(`Processing file: ${filename}`);
     try {
       await processFile(filename);

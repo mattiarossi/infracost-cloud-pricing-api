@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import axios, { AxiosResponse } from 'axios';
 import glob from 'glob';
 import config from '../config';
@@ -66,7 +67,7 @@ async function downloadAll(): Promise<PageJson[]> {
 
     const resp: AxiosResponse<PageJson> = await axios.get(currentPageLink);
 
-    const filename = `data/az-retail-page-${pageNumber}.json`;
+    const filename = path.join(config.dataDir, `az-retail-page-${pageNumber}.json`);
 
     const dataString = JSON.stringify(resp.data);
     fs.writeFile(filename, dataString, (err) => {
@@ -86,7 +87,7 @@ async function downloadAll(): Promise<PageJson[]> {
 
 async function loadAll(): Promise<void> {
   config.logger.info(`Loading Azure Pricing Items...`);
-  for (const filename of glob.sync('data/az-retail-page-*.json')) {
+  for (const filename of glob.sync('az-retail-page-*.json', { cwd: config.dataDir, absolute: true })) {
     try {
       await processFile(filename);
     } catch (e: any) {

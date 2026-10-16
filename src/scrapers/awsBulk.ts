@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import _ from 'lodash';
 import axios from 'axios';
 import glob from 'glob';
@@ -7,11 +8,14 @@ import config from '../config';
 import { Product, Price } from '../db/types';
 import { generateProductHash, generatePriceHash } from '../db/helpers';
 import { upsertProducts, upsertProductPricesOnly } from '../db/upsert';
+import type { ScrapeResult } from './types';
 
 const baseUrl = 'https://pricing.us-east-1.amazonaws.com';
 const indexUrl = '/offers/v1.0/aws/index.json';
 const chinaIndexUrl = '/offers/v1.0/cn/index.json';
 const splitByRegions = ['AmazonEC2'];
+/** the Region a testing run takes by default: every region-split and savings-plan offer publishes it */
+const TESTING_REGION = 'us-east-1';
 
 /** Extract the publication timestamp from a versioned AWS pricing URL, e.g. /offers/v1.0/aws/AmazonEC2/20260224205727/us-east-1/index.json → '20260224205727'.
  *  A URL without one is refused: a file named without its version is found by the existence check on every later run and never refreshed. */
@@ -27,8 +31,9 @@ function extractVersion(url: string): string {
  *  and the version-less `-current` file earlier releases wrote for every single-file service (left in place it
  *  would sort after the versioned file and, under --force, load after it). */
 function cleanupOldVersions(currentFilename: string): void {
-  const pattern = currentFilename.replace(/\d{14}/, '{??????????????,current}');
-  const siblings = glob.sync(pattern);
+  // the pattern is the file name alone, matched inside its directory: a directory name is never read as a pattern
+  const pattern = path.basename(currentFilename).replace(/\d{14}/, '{??????????????,current}');
+  const siblings = glob.sync(pattern, { cwd: path.dirname(currentFilename), absolute: true });
   for (const sibling of siblings) {
     if (sibling !== currentFilename) {
       fs.unlinkSync(sibling);
@@ -100,6 +105,22 @@ function matchesService(filename: string, services: string[]): boolean {
  *  service → savings-plan-offer map built during download. A request naming the
  *  savings-plan offer directly (e.g. AWSDatabaseSavingsPlans) also matches.
  *  Comparison is case-insensitive on both the file's offer code and the map. */
+/** the Region of a region-split or savings-plan file (aws-AmazonEC2-<region>-<v>.json, aws-<offer>-savings-plan-<region>-<v>.json); null for a single-file offer */
+function fileRegion(filename: string): string | null {
+  const base = path.basename(filename);
+  const sp = /-savings-plan-(.+)-\d{14}\.json$/.exec(base);
+  if (sp) return sp[1];
+  const split = new RegExp(`^(?:aws|awscn)-(?:${splitByRegions.join('|')})-(.+)-\\d{14}\\.json$`).exec(base);
+  return split ? split[1] : null;
+}
+
+/** what a testing run loads: the AWS partition's single-file offers, and the testing Region's files of the others */
+function inTestingScope(filename: string, options: LoadOptions): boolean {
+  if (!path.basename(filename).startsWith('aws-')) return false;
+  const region = fileRegion(filename);
+  return region === null || region === options.testingRegion;
+}
+
 function matchesSavingsPlanService(
   filename: string,
   services: string[],
@@ -131,6 +152,10 @@ interface LoadOptions {
   onlySavingsPlan: boolean;
   /** If non-empty, only load files whose offer code appears in this list */
   services: string[];
+  /** One file per offer: of a region-split or savings-plan offer only testingRegion's file is downloaded and loaded; the China partition is not read */
+  testing: boolean;
+  /** the Region a testing run takes: TESTING_REGION unless --testing-region names another */
+  testingRegion: string;
 }
 
 function parseArgs(): LoadOptions {
@@ -140,12 +165,19 @@ function parseArgs(): LoadOptions {
     onlyStandard: false,
     onlySavingsPlan: false,
     services: [],
+    testing: false,
+    testingRegion: TESTING_REGION,
   };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--force' || arg === '-f') {
       options.force = true;
+    } else if (arg === '--testing') {
+      options.testing = true;
+    } else if (arg === '--testing-region' && args[i + 1] && !args[i + 1].startsWith('-')) {
+      options.testingRegion = args[i + 1];
+      i += 1;
     } else if (arg === '--only-standard') {
       options.onlyStandard = true;
     } else if (arg === '--only-savings-plan') {
@@ -159,58 +191,8 @@ function parseArgs(): LoadOptions {
   return options;
 }
 
-const regionMapping: { [key: string]: string } = {
-  // GovCloud / isolated
-  'AWS GovCloud (US)': 'us-gov-west-1',
-  'AWS GovCloud (US-West)': 'us-gov-west-1',
-  'AWS GovCloud (US-East)': 'us-gov-east-1',
-  'US ISO East': 'us-iso-east-1',
-  'US ISOB East (Ohio)': 'us-isob-east-1',
-  // North America
-  'US East (N. Virginia)': 'us-east-1',
-  'US East (Ohio)': 'us-east-2',
-  'US West (N. California)': 'us-west-1',
-  'US West (Oregon)': 'us-west-2',
-  'US West (Los Angeles)': 'us-west-2-lax-1',
-  'Canada (Central)': 'ca-central-1',
-  'Canada West (Calgary)': 'ca-west-1',
-  'Mexico (Central)': 'mx-central-1',
-  // South America
-  'South America (Sao Paulo)': 'sa-east-1',
-  // Europe
-  'EU (Frankfurt)': 'eu-central-1',
-  'Europe (Zurich)': 'eu-central-2',
-  'EU (Ireland)': 'eu-west-1',
-  'EU (London)': 'eu-west-2',
-  'EU (Paris)': 'eu-west-3',
-  'EU (Milan)': 'eu-south-1',
-  'Europe (Spain)': 'eu-south-2',
-  'EU (Stockholm)': 'eu-north-1',
-  // China
-  'China (Beijing)': 'cn-north-1',
-  'China (Ningxia)': 'cn-northwest-1',
-  // Asia Pacific
-  'Asia Pacific (Hong Kong)': 'ap-east-1',
-  'Asia Pacific (Taipei)': 'ap-east-2',
-  'Asia Pacific (Tokyo)': 'ap-northeast-1',
-  'Asia Pacific (Seoul)': 'ap-northeast-2',
-  'Asia Pacific (Osaka-Local)': 'ap-northeast-3',
-  'Asia Pacific (Osaka)': 'ap-northeast-3',
-  'Asia Pacific (Mumbai)': 'ap-south-1',
-  'Asia Pacific (Hyderabad)': 'ap-south-2',
-  'Asia Pacific (Singapore)': 'ap-southeast-1',
-  'Asia Pacific (Sydney)': 'ap-southeast-2',
-  'Asia Pacific (Jakarta)': 'ap-southeast-3',
-  'Asia Pacific (Melbourne)': 'ap-southeast-4',
-  'Asia Pacific (Malaysia)': 'ap-southeast-5',
-  'Asia Pacific (New Zealand)': 'ap-southeast-6',
-  'Asia Pacific (Thailand)': 'ap-southeast-7',
-  // Middle East / Africa
-  'Middle East (Bahrain)': 'me-south-1',
-  'Middle East (UAE)': 'me-central-1',
-  'Israel (Tel Aviv)': 'il-central-1',
-  'Africa (Cape Town)': 'af-south-1',
-};
+/** the region of a product priced across regions (no attributes.regionCode: data transfer, location "Any") */
+const GLOBAL_REGION = 'aws-global';
 
 
 type ProductJson = {
@@ -219,6 +201,8 @@ type ProductJson = {
   attributes: {
     location: string;
     servicecode: string;
+    /** the Region or zone code: us-east-1, us-east-1-bos-1, eu-west-2-wl1-lon1; absent on a product priced across regions (data transfer, location "Any") */
+    regionCode?: string;
   } & { [key: string]: string };
 };
 
@@ -293,7 +277,8 @@ type SavingsPlanServiceJson = {
 // Run stats
 // ---------------------------------------------------------------------------
 
-interface RunStats {
+/** the run's counts and the files that failed to load; the statistics are the scrape's result (./types) */
+export interface RunStats extends ScrapeResult {
   download: {
     standardDownloaded: number;
     standardCached: number;
@@ -303,18 +288,22 @@ interface RunStats {
     savingsPlanIndexesSkipped: number;
   };
   load: {
-    standard: { processed: number; cached: number; filtered: number; errors: number; productsUpserted: number; productsSkippedNoService: number };
+    standard: { processed: number; cached: number; filtered: number; errors: number; productsUpserted: number; productsSkippedNoService: number; productsGlobal: number };
     savingsPlan: { processed: number; cached: number; filtered: number; errors: number; skippedNoProducts: number; productsUpdated: number; ratesMatched: number; ratesSkipped: number };
   };
+  /** the Region of a testing run (--testing); null for a run over the whole price list */
+  testingRegion: string | null;
 }
 
 function createStats(): RunStats {
   return {
     download: { standardDownloaded: 0, standardCached: 0, savingsPlanDownloaded: 0, savingsPlanCached: 0, savingsPlanZonesSkipped: 0, savingsPlanIndexesSkipped: 0 },
     load: {
-      standard: { processed: 0, cached: 0, filtered: 0, errors: 0, productsUpserted: 0, productsSkippedNoService: 0 },
+      standard: { processed: 0, cached: 0, filtered: 0, errors: 0, productsUpserted: 0, productsSkippedNoService: 0, productsGlobal: 0 },
       savingsPlan: { processed: 0, cached: 0, filtered: 0, errors: 0, skippedNoProducts: 0, productsUpdated: 0, ratesMatched: 0, ratesSkipped: 0 },
     },
+    failures: [],
+    testingRegion: null,
   };
 }
 
@@ -325,6 +314,7 @@ function printSummary(stats: RunStats): void {
 
   config.logger.info('');
   config.logger.info('======================= RUN SUMMARY =======================');
+  if (stats.testingRegion) config.logger.info(`  Testing             : one file per offer, region ${stats.testingRegion}`);
   config.logger.info('DOWNLOAD');
   config.logger.info(`  Standard pricing    : ${dl.standardDownloaded} downloaded, ${dl.standardCached} cached`);
   config.logger.info(`  Savings plan        : ${dl.savingsPlanDownloaded} downloaded, ${dl.savingsPlanCached} cached, ${dl.savingsPlanZonesSkipped} zones skipped, ${dl.savingsPlanIndexesSkipped} duplicate indexes skipped`);
@@ -332,6 +322,7 @@ function printSummary(stats: RunStats): void {
   config.logger.info(`  Files               : ${std.processed} processed, ${std.cached} cached, ${std.filtered} filtered, ${std.errors} errors`);
   config.logger.info(`  Products upserted   : ${std.productsUpserted.toLocaleString()}`);
   config.logger.info(`  Products skipped    : ${std.productsSkippedNoService.toLocaleString()} (no servicecode)`);
+  config.logger.info(`  Products global     : ${std.productsGlobal.toLocaleString()} (no regionCode, stored as ${GLOBAL_REGION})`);
   config.logger.info('LOAD — Savings plans');
   config.logger.info(`  Files               : ${sp.processed} processed, ${sp.cached} cached, ${sp.filtered} filtered, ${sp.errors} errors, ${sp.skippedNoProducts} skipped (no standard products)`);
   config.logger.info(`  Products updated    : ${sp.productsUpdated.toLocaleString()}`);
@@ -353,18 +344,22 @@ function normalizeTermLength(raw: any): string | undefined {
   return String(raw);
 }
 
-async function scrape(): Promise<void> {
+/** download every AWS offer and load the files not yet marked loaded; the run's statistics, with the files that
+ *  failed to load, are the result (dataScrape judges the run by them and writes them into its summary) */
+async function scrape(): Promise<RunStats> {
   const options = parseArgs();
   const stats = createStats();
   config.logger.info(
-    `Load options — force: ${options.force}, onlyStandard: ${options.onlyStandard}, onlySavingsPlan: ${options.onlySavingsPlan}, services: ${options.services.length ? options.services.join(',') : '(all)'}`
+    `Load options — force: ${options.force}, onlyStandard: ${options.onlyStandard}, onlySavingsPlan: ${options.onlySavingsPlan}, services: ${options.services.length ? options.services.join(',') : '(all)'}, testing: ${options.testing ? options.testingRegion : 'no'}`
   );
-  const serviceToSpOffer = await downloadAll(stats);
+  stats.testingRegion = options.testing ? options.testingRegion : null;
+  const serviceToSpOffer = await downloadAll(stats, options);
   await loadAll(options, stats, serviceToSpOffer);
   printSummary(stats);
+  return stats;
 }
 
-async function downloadAll(stats: RunStats): Promise<Map<string, string>> {
+async function downloadAll(stats: RunStats, options: LoadOptions): Promise<Map<string, string>> {
   // Maps each service offer code to the savings-plan offer that covers it
   // (derived from the shared currentSavingsPlanIndexUrl). Consumed by the
   // --services translation in loadAll, because savings-plan files are now named
@@ -376,18 +371,23 @@ async function downloadAll(stats: RunStats): Promise<Map<string, string>> {
   // never collide.
   const handledSpIndexes = new Set<string>();
 
+  // a testing run takes one Region of every region-split and savings-plan offer
+  const onlyRegion = options.testing ? options.testingRegion : null;
+
   // Download standard AWS regions
   let indexResp = await axios.get(`${baseUrl}${indexUrl}`);
   for (const offer of <Offer[]>Object.values(indexResp.data.offers)) {
-    await downloadService(offer, stats);
-    await downloadSavingsPlan(offer, stats, 'aws', serviceToSpOffer, handledSpIndexes);
+    await downloadService(offer, stats, 'aws', onlyRegion);
+    await downloadSavingsPlan(offer, stats, 'aws', serviceToSpOffer, handledSpIndexes, onlyRegion);
   }
 
-  // Download AWS China regions
-  indexResp = await axios.get(`${baseUrl}${chinaIndexUrl}`);
-  for (const offer of <Offer[]>Object.values(indexResp.data.offers)) {
-    await downloadService(offer, stats, 'awscn');
-    await downloadSavingsPlan(offer, stats, 'awscn', serviceToSpOffer, handledSpIndexes);
+  // Download AWS China regions — not in a testing run: the partition publishes none of the AWS Regions
+  if (!options.testing) {
+    indexResp = await axios.get(`${baseUrl}${chinaIndexUrl}`);
+    for (const offer of <Offer[]>Object.values(indexResp.data.offers)) {
+      await downloadService(offer, stats, 'awscn');
+      await downloadSavingsPlan(offer, stats, 'awscn', serviceToSpOffer, handledSpIndexes);
+    }
   }
 
   return serviceToSpOffer;
@@ -417,7 +417,7 @@ interface SavingsPlanRegion {
   versionUrl: string;
 }
 
-async function downloadService(offer: Offer, stats: RunStats, prefix?: string) {
+async function downloadService(offer: Offer, stats: RunStats, prefix?: string, onlyRegion: string | null = null) {
   if (!prefix) {
     prefix = 'aws'; // eslint-disable-line no-param-reassign
   }
@@ -427,8 +427,9 @@ async function downloadService(offer: Offer, stats: RunStats, prefix?: string) {
       `${baseUrl}${offer.currentRegionIndexUrl}`
     );
     for (const region of <Region[]>Object.values(regionResp.data.regions)) {
+      if (onlyRegion && region.regionCode !== onlyRegion) continue;
       const version = extractVersion(region.currentVersionUrl);
-      const filename = `data/${prefix}-${offer.offerCode}-${region.regionCode}-${version}.json`;
+      const filename = path.join(config.dataDir, `${prefix}-${offer.offerCode}-${region.regionCode}-${version}.json`);
       if (fs.existsSync(filename)) {
         config.logger.info(`Skipping already downloaded ${filename}`);
         stats.download.standardCached++;
@@ -458,7 +459,7 @@ async function downloadService(offer: Offer, stats: RunStats, prefix?: string) {
       throw new Error(`${offer.offerCode}: version index names ${versionIndex.currentVersion} as current but lists no such version`);
     }
     const version = extractVersion(current.offerVersionUrl);
-    const filename = `data/${prefix}-${offer.offerCode}-${version}.json`;
+    const filename = path.join(config.dataDir, `${prefix}-${offer.offerCode}-${version}.json`);
     if (fs.existsSync(filename)) {
       config.logger.info(`Skipping already downloaded ${filename}`);
       stats.download.standardCached++;
@@ -485,7 +486,8 @@ async function downloadSavingsPlan(
   stats: RunStats,
   prefix = 'aws',
   serviceToSpOffer?: Map<string, string>,
-  handledSpIndexes?: Set<string>
+  handledSpIndexes?: Set<string>,
+  onlyRegion: string | null = null
 ) {
   if (!offer.currentSavingsPlanIndexUrl) {
     return;
@@ -528,18 +530,10 @@ async function downloadSavingsPlan(
   // "us-east-1-wl1-chi1") while main regions have the standard 3-segment
   // form (e.g. "us-east-1", "eu-west-2", "ap-northeast-1").
   //
-  // We skip these because:
-  //   1. The standard pricing files for local/wavelength zones use location
-  //      names (e.g. "US East (Philadelphia)") that are not in regionMapping,
-  //      so their products end up with region=null in the DB.
-  //   2. Even if regionMapping were extended, the savings plan rates for these
-  //      zones use zone-prefixed usageTypes (e.g. "PHL1-BoxUsage:c5d.xlarge")
-  //      that don't match the main-region product attributes.
-  //
-  // TODO: To support local/wavelength zone savings plans in the future:
-  //   a. Add zone location names to regionMapping (or auto-derive from the
-  //      standard pricing file's regionCode field).
-  //   b. Remove or relax this filter.
+  // The zones' standard price lists load under their zone codes; their savings
+  // plans are not loaded: the rates name zone-prefixed usage types
+  // (e.g. "PHL1-BoxUsage:c5d.xlarge"), and their match to the zone products by
+  // (usagetype, operation) is unverified. Loading them is relaxing this filter.
   const mainRegions = regions.filter((r) => isMainRegion(r.regionCode));
   const skippedCount = regions.length - mainRegions.length;
   stats.download.savingsPlanZonesSkipped += skippedCount;
@@ -549,9 +543,10 @@ async function downloadSavingsPlan(
     );
   }
 
-  for (const region of mainRegions) {
+  const wanted = onlyRegion ? mainRegions.filter((r) => r.regionCode === onlyRegion) : mainRegions;
+  for (const region of wanted) {
     const version = extractVersion(region.versionUrl);
-    const filename = `data/${prefix}-${spOfferCode}-savings-plan-${region.regionCode}-${version}.json`;
+    const filename = path.join(config.dataDir, `${prefix}-${spOfferCode}-savings-plan-${region.regionCode}-${version}.json`);
     if (fs.existsSync(filename)) {
       config.logger.info(`Skipping already downloaded ${filename}`);
       stats.download.savingsPlanCached++;
@@ -578,7 +573,7 @@ async function loadAll(
   stats: RunStats,
   serviceToSpOffer: Map<string, string> = new Map()
 ): Promise<void> {
-  const allFiles = glob.sync('data/aws*.json').filter((f) => !f.endsWith('.loaded'));
+  const allFiles = glob.sync('aws*.json', { cwd: config.dataDir, absolute: true }).filter((f) => !f.endsWith('.loaded'));
   const savingsPlanFiles = allFiles.filter((filename) =>
     filename.includes('-savings-plan-') || filename.endsWith('-savings-plan.json')
   );
@@ -591,6 +586,10 @@ async function loadAll(
 
   if (processStandard) {
     for (const filename of standardFiles) {
+      if (options.testing && !inTestingScope(filename, options)) {
+        stats.load.standard.filtered++;
+        continue;
+      }
       if (options.services.length > 0 && !matchesService(filename, options.services)) {
         stats.load.standard.filtered++;
         continue;
@@ -609,12 +608,17 @@ async function loadAll(
         config.logger.error(`Skipping file ${filename} due to error ${e}`);
         config.logger.error(e.stack);
         stats.load.standard.errors++;
+        stats.failures.push({ file: filename, error: String(e) });
       }
     }
   }
 
   if (processSavingsPlan) {
     for (const filename of savingsPlanFiles) {
+      if (options.testing && !inTestingScope(filename, options)) {
+        stats.load.savingsPlan.filtered++;
+        continue;
+      }
       if (options.services.length > 0 && !matchesSavingsPlanService(filename, options.services, serviceToSpOffer)) {
         stats.load.savingsPlan.filtered++;
         continue;
@@ -632,6 +636,7 @@ async function loadAll(
         config.logger.error(`Skipping file ${filename} due to error ${e}`);
         config.logger.error(e.stack);
         stats.load.savingsPlan.errors++;
+        stats.failures.push({ file: filename, error: String(e) });
       }
     }
   }
@@ -657,6 +662,9 @@ async function processFile(filename: string, stats: RunStats): Promise<void> {
     config.logger.warn(`${filename}: ${skipped} of ${productJsons.length} products carry no attributes.servicecode and are skipped`);
     stats.load.standard.productsSkippedNoService += skipped;
   }
+  // a product without attributes.regionCode is priced across regions (data transfer, location "Any"):
+  // stored under GLOBAL_REGION (parseProduct) and counted for the run summary
+  stats.load.standard.productsGlobal += withService.filter((p) => !p.attributes.regionCode).length;
   const products = withService.map((productJson) => {
     const product = parseProduct(productJson);
 
@@ -923,7 +931,7 @@ function parseProduct(productJson: ProductJson) {
     vendorName: 'aws',
     service: productJson.attributes.servicecode,
     productFamily: productJson.productFamily,
-    region: regionMapping[productJson.attributes.location] || null,
+    region: productJson.attributes.regionCode || GLOBAL_REGION,
     sku: productJson.sku,
     attributes: productJson.attributes,
     prices: [],

@@ -20,10 +20,10 @@ async function run(): Promise<void> {
 
   const argv = await yargs
     .usage(
-      'Usage: $0 --path=[ location of *.csv.gz files, default: ./data/cprdata ] --skip-data-load=[ skip data loading and only refresh views ]'
+      'Usage: $0 --path=[ location of *.csv.gz files, default: <data directory>/cprdata ] --skip-data-load=[ skip data loading and only refresh views ]'
     )
     .options({
-      path: { type: 'string', default: './data/cprdata' },
+      path: { type: 'string', default: path.join(config.dataDir, 'cprdata') },
       'skip-data-load': { type: 'boolean', default: false, description: 'Skip data loading and only refresh materialized views' },
     }).argv;
 
