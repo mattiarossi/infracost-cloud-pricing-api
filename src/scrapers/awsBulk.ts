@@ -62,6 +62,11 @@ function markAsLoaded(filename: string): void {
   fs.writeFileSync(loadedMarker(filename), '');
 }
 
+/** the marker goes before a forced load, so a run stopped mid-way leaves the file unmarked and the next run loads it */
+function unmarkLoaded(filename: string): void {
+  fs.rmSync(loadedMarker(filename), { force: true });
+}
+
 /** Extract the offer code from a data filename.
  *  e.g. data/aws-AmazonEC2-us-east-1-20260224205727.json        → 'AmazonEC2'
  *       data/aws-AWSComputeSavingsPlan-savings-plan-us-east-1-... → 'AWSComputeSavingsPlan'
@@ -581,63 +586,69 @@ async function loadAll(
     (filename) => !savingsPlanFiles.includes(filename)
   );
 
-  const processStandard = !options.onlySavingsPlan;
-  const processSavingsPlan = !options.onlyStandard;
-
-  if (processStandard) {
+  // the files this run loads: the testing scope and --services leave the others as filtered
+  const standardSelected: string[] = [];
+  if (!options.onlySavingsPlan) {
     for (const filename of standardFiles) {
-      if (options.testing && !inTestingScope(filename, options)) {
+      if ((options.testing && !inTestingScope(filename, options)) || (options.services.length > 0 && !matchesService(filename, options.services))) {
         stats.load.standard.filtered++;
-        continue;
+      } else {
+        standardSelected.push(filename);
       }
-      if (options.services.length > 0 && !matchesService(filename, options.services)) {
-        stats.load.standard.filtered++;
-        continue;
-      }
-      if (!options.force && isAlreadyLoaded(filename)) {
-        config.logger.info(`Skipping already loaded ${filename}`);
-        stats.load.standard.cached++;
-        continue;
-      }
-      config.logger.info(`Processing file: ${filename}`);
-      try {
-        await processFile(filename, stats);
-        markAsLoaded(filename);
-        stats.load.standard.processed++;
-      } catch (e: any) {
-        config.logger.error(`Skipping file ${filename} due to error ${e}`);
-        config.logger.error(e.stack);
-        stats.load.standard.errors++;
-        stats.failures.push({ file: filename, error: String(e) });
+    }
+  }
+  const savingsPlanSelected: string[] = [];
+  if (!options.onlyStandard) {
+    for (const filename of savingsPlanFiles) {
+      if ((options.testing && !inTestingScope(filename, options)) || (options.services.length > 0 && !matchesSavingsPlanService(filename, options.services, serviceToSpOffer))) {
+        stats.load.savingsPlan.filtered++;
+      } else {
+        savingsPlanSelected.push(filename);
       }
     }
   }
 
-  if (processSavingsPlan) {
-    for (const filename of savingsPlanFiles) {
-      if (options.testing && !inTestingScope(filename, options)) {
-        stats.load.savingsPlan.filtered++;
-        continue;
-      }
-      if (options.services.length > 0 && !matchesSavingsPlanService(filename, options.services, serviceToSpOffer)) {
-        stats.load.savingsPlan.filtered++;
-        continue;
-      }
-      if (!options.force && isAlreadyLoaded(filename)) {
-        config.logger.info(`Skipping already loaded ${filename}`);
-        stats.load.savingsPlan.cached++;
-        continue;
-      }
-      config.logger.info(`Processing file: ${filename}`);
-      try {
-        await processFile(filename, stats);
-        markAsLoaded(filename);
-      } catch (e: any) {
-        config.logger.error(`Skipping file ${filename} due to error ${e}`);
-        config.logger.error(e.stack);
-        stats.load.savingsPlan.errors++;
-        stats.failures.push({ file: filename, error: String(e) });
-      }
+  // --force: every selected file's marker goes before the first load, so a run stopped mid-way leaves
+  // exactly the files it has not loaded unmarked, and the next run loads them
+  if (options.force) {
+    for (const filename of [...standardSelected, ...savingsPlanSelected]) unmarkLoaded(filename);
+    config.logger.info(`--force: ${standardSelected.length + savingsPlanSelected.length} load marker(s) removed before the load`);
+  }
+
+  for (const filename of standardSelected) {
+    if (!options.force && isAlreadyLoaded(filename)) {
+      config.logger.info(`Skipping already loaded ${filename}`);
+      stats.load.standard.cached++;
+      continue;
+    }
+    config.logger.info(`Processing file: ${filename}`);
+    try {
+      await processFile(filename, stats);
+      markAsLoaded(filename);
+      stats.load.standard.processed++;
+    } catch (e: any) {
+      config.logger.error(`Skipping file ${filename} due to error ${e}`);
+      config.logger.error(e.stack);
+      stats.load.standard.errors++;
+      stats.failures.push({ file: filename, error: String(e) });
+    }
+  }
+
+  for (const filename of savingsPlanSelected) {
+    if (!options.force && isAlreadyLoaded(filename)) {
+      config.logger.info(`Skipping already loaded ${filename}`);
+      stats.load.savingsPlan.cached++;
+      continue;
+    }
+    config.logger.info(`Processing file: ${filename}`);
+    try {
+      await processFile(filename, stats);
+      markAsLoaded(filename);
+    } catch (e: any) {
+      config.logger.error(`Skipping file ${filename} due to error ${e}`);
+      config.logger.error(e.stack);
+      stats.load.savingsPlan.errors++;
+      stats.failures.push({ file: filename, error: String(e) });
     }
   }
 }

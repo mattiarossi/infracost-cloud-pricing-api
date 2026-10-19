@@ -239,7 +239,7 @@ The scraper accepts the following command-line flags to control which files are 
 
 | Flag | Description |
 |---|---|
-| `--force` / `-f` | Re-process **all** files, ignoring `.loaded` markers |
+| `--force` / `-f` | Re-process **all** selected files: their `.loaded` markers are removed before the load begins, so a run stopped mid-way leaves the files it did not load unmarked and the next run loads them |
 | `--only-standard` | Process only **standard** pricing files (on-demand / reserved); savings plan files are skipped |
 | `--only-savings-plan` | Process only **savings plan** files; standard pricing files are skipped |
 | `--services <list>` / `-s <list>` | Comma-separated list of AWS offer codes to process; all others are skipped |
