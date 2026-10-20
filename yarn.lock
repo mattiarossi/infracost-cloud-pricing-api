@@ -209,6 +209,21 @@
   dependencies:
     "@types/node" "*"
 
+"@types/stream-chain@*":
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/@types/stream-chain/-/stream-chain-2.1.0.tgz#54f1496eb653482c44b5015abe2e6ae0eae594a1"
+  integrity sha512-guDyAl6s/CAzXUOWpGK2bHvdiopLIwpGu8v10+lb9hnQOyo4oj/ZUQFOvqFjKGsE3wJP1fpIesCcMvbXuWsqOg==
+  dependencies:
+    "@types/node" "*"
+
+"@types/stream-json@^1.7.8":
+  version "1.7.8"
+  resolved "https://registry.yarnpkg.com/@types/stream-json/-/stream-json-1.7.8.tgz#e247ca207f73b679f840d3807ef44e49b12cb77a"
+  integrity sha512-MU1OB1eFLcYWd1LjwKXrxdoPtXSRzRmAnnxs4Js/ayB5O/NvHraWwuOaqMWIebpYwM6khFlsJOHEhI9xK/ab4Q==
+  dependencies:
+    "@types/node" "*"
+    "@types/stream-chain" "*"
+
 "@types/tmp@^0.2.1":
   version "0.2.6"
   resolved "https://registry.npmjs.org/@types/tmp/-/tmp-0.2.6.tgz"
@@ -2660,6 +2675,18 @@ stop-iteration-iterator@^1.1.0:
   dependencies:
     es-errors "^1.3.0"
     internal-slot "^1.1.0"
+
+stream-chain@^2.2.5:
+  version "2.2.5"
+  resolved "https://registry.yarnpkg.com/stream-chain/-/stream-chain-2.2.5.tgz#b30967e8f14ee033c5b9a19bbe8a2cba90ba0d09"
+  integrity sha512-1TJmBx6aSWqZ4tx7aTpBDXK0/e2hhcNSTV8+CbFJtDjbb+I1mZ8lHit0Grw9GRT+6JbIrrDd8esncgBi8aBXGA==
+
+stream-json@^1.9.1:
+  version "1.9.1"
+  resolved "https://registry.yarnpkg.com/stream-json/-/stream-json-1.9.1.tgz#e3fec03e984a503718946c170db7d74556c2a187"
+  integrity sha512-uWkjJ+2Nt/LO9Z/JyKZbMusL8Dkh97uUBTv3AJQ74y07lVahLY4eEFsPsE97pxYBwr8nnjMAIch5eqI0gPShyw==
+  dependencies:
+    stream-chain "^2.2.5"
 
 streamroller@^3.1.5:
   version "3.1.5"

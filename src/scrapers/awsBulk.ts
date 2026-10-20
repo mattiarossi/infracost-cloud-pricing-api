@@ -1,9 +1,12 @@
 import fs from 'fs';
 import path from 'path';
+import { constants as bufferConstants } from 'buffer';
 import _ from 'lodash';
 import axios from 'axios';
 import glob from 'glob';
 import format from 'pg-format';
+import { parser as jsonTokens } from 'stream-json';
+import Assembler from 'stream-json/Assembler';
 import config from '../config';
 import { Product, Price } from '../db/types';
 import { generateProductHash, generatePriceHash } from '../db/helpers';
@@ -653,9 +656,22 @@ async function loadAll(
   }
 }
 
+/** a price file as one object: parsed from one string while the file fits node's longest string (the fast
+ *  path), assembled from a token stream above it — the same object, so the load reads it the same way; AWS's
+ *  RDS list crossed that limit (512 MiB) with its publication of 2026-10-20 */
+async function readPriceFile(filename: string): Promise<any> {
+  if (fs.statSync(filename).size < bufferConstants.MAX_STRING_LENGTH) return JSON.parse(fs.readFileSync(filename, 'utf8'));
+  config.logger.info(`Reading ${filename} as a token stream: larger than node's longest string`);
+  return new Promise((resolve, reject) => {
+    const tokens = fs.createReadStream(filename).pipe(jsonTokens());
+    const assembler = Assembler.connectTo(tokens);
+    tokens.on('end', () => resolve(assembler.current));
+    tokens.on('error', reject);
+  });
+}
+
 async function processFile(filename: string, stats: RunStats): Promise<void> {
-  const body = fs.readFileSync(filename);
-  const json = JSON.parse(body.toString());
+  const json = await readPriceFile(filename);
 
   if (isSavingsPlanServiceJson(json)) {
     await processSavingsPlanFile(json, filename, stats);

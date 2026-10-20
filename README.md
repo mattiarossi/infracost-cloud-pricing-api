@@ -233,6 +233,10 @@ under the region `aws-global`; the run summary counts them (`Products global`). 
 and Wavelength Zones are not downloaded. A product already loaded keeps its stored region until its file
 loads again (`--force`).
 
+A price list larger than node's longest string (512 MiB; the RDS list crossed it on 2026-10-20) is read from
+a token stream into the same object the smaller lists are parsed into — slower for that file, the load
+unchanged.
+
 ### CLI flags
 
 The scraper accepts the following command-line flags to control which files are (re-)loaded on a given run. These are especially useful after a partial failure or when you need to force-reload a subset of the data.
