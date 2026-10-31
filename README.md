@@ -277,13 +277,51 @@ npm run job:update -- --only-savings-plan --services AWSComputeSavingsPlan
 ### The run's outcome
 
 `npm run data:scrape` (built) or `npm run data:scrape:dev` (from source) runs the scrapers `--only` selects
-(`--only aws:bulk`; every scraper when absent), with their own flags above. The stats row records the update
+(`--only aws:bulk,aws:odbRegions,oracle:cetools`; every scraper when absent), with their own flags above. The stats row records the update
 as not successful when the run starts and as successful only when every selected scraper finished and none
 reported a file it could not load, so a failed or interrupted run keeps the time of the last successful
 update. `--summary <file>` writes each scraper's outcome as JSON: its error, or its result (for `aws:bulk`,
 the run statistics and every file that failed to load with its error). The command exits 1 when a scraper
 stopped or a file failed to load; a file that failed carries no `.loaded` marker and loads on the next run.
 A scraper's code is loaded only when it runs.
+
+## Oracle price list scraper (`oracle:cetools`)
+
+`src/scrapers/oracleCetools.ts` downloads Oracle's public cloud price list, the one JSON document the
+Oracle cost estimator and the price list page render from:
+`https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/` (anonymous GET; `lastUpdated` and `items`,
+an item being `partNumber`, `displayName`, `metricName`, `serviceCategory`, an optional `description` and
+`currencyCodeLocalizations`, each currency with `prices` of `{model, value, rangeMin?, rangeMax?}`).
+
+| What | Value |
+|---|---|
+| Cache file | `oracle-cetools-<lastUpdated digits>.json`, written when the document's `lastUpdated` is new; a `.loaded` marker beside it once loaded, removed by `--force` |
+| Product | one per part number: `vendorName` `oracle`, `sku` = the part number, `region` NULL (a list price is global), `service` `OracleCloud`, `productFamily` = the service category; attributes `displayName`, `metricName`, `serviceCategory`, `description`, `lastUpdated` |
+| Prices | one per USD price point: `purchaseOption` = the model (`PAY_AS_YOU_GO`), `unit` = the metric name, `USD` = the value, `startUsageAmount` and `endUsageAmount` from the range bounds where the point carries them, `effectiveDateStart` = `lastUpdated`, `partNumber` |
+| Identity | the product hash is `md5('oracle--<part number>')`, so a row survives every document; a price hash is the purchase option, the unit and the tier bounds, so a changed value overwrites its key on the upsert and a tier Oracle removes stays as a stale key until the row is rebuilt |
+
+## Oracle Database@AWS regions scraper (`aws:odbRegions`)
+
+`src/scrapers/odbRegions.ts` assembles one product per AWS region where Oracle Database@AWS is live, from
+three sources read on every run:
+
+| Source | URL | Carries |
+|---|---|---|
+| the AWS regional services table | `https://api.regional-table.region-services.aws.a2z.com/index.json` | the region set: the entries whose `aws:serviceName` is `Oracle Database@AWS` |
+| the AWS user guide, "Supported Regions" | `https://docs.aws.amazon.com/odb/latest/UserGuide/getting-started.html` | every table headed Region name / Region code / Availability Zones: the name, the code and the zone ids of each region |
+| Oracle's regional availability matrix | `https://docs.oracle.com/en-us/iaas/Content/database-at-aws/oaaws-regions.htm` | every table headed AWS region … / OCI region / … status, then one column per service: for each live row, the zones each service column grants (a tick = every zone of the row, a tick with zone ids = those, an x = none) |
+
+The two pages are fetched with a browser user agent. A row of Oracle's matrix is matched to the guide by the
+prefix of its zone ids (`cac1-az1` → `cac1`), by its name second: the pages spell a region's name differently
+and never a zone id. The run fails, and nothing is upserted, when the table and the guide disagree on the
+region set, when a row of Oracle's matrix matches no region of the guide by zone id or by name, when a region
+of the table has no live row in the matrix, or when a page no longer carries its identity headers.
+
+| What | Value |
+|---|---|
+| Cache file | `odb-regions-<date>.json`, the assembled rows of the run: a record, not a load input (the rows are upserted on every run; no load marker) |
+| Product | one per region: `vendorName` `aws`, `service` `AmazonODB`, `sku` `odb:region:<code>`, `region` = the code, `productFamily` `Region availability`, no price |
+| Attributes | `regionCode`, `location` (the guide's region name), `locationType` `AWS Region`, `zones` (the union of the guide's and Oracle's zone ids, comma-separated), and one `svc:<column header verbatim>` per service column of Oracle's matrix with the zone ids that service has in the region, empty when it has none — a column Oracle adds appears at the next run with no change here |
 
 ---
 

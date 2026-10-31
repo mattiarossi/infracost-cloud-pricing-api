@@ -24,6 +24,10 @@ const Scrapers: { [vendor: string]: { [source: string]: () => Promise<Scrape> } 
   aws: {
     bulk: async () => (await import('../scrapers/awsBulk')).default.scrape,
     spot: async () => (await import('../scrapers/awsSpot')).default.scrape,
+    odbRegions: async () => (await import('../scrapers/odbRegions')).default.scrape,
+  },
+  oracle: {
+    cetools: async () => (await import('../scrapers/oracleCetools')).default.scrape,
   },
   azure: {
     retail: async () => (await import('../scrapers/azureRetail')).default.scrape,
@@ -50,7 +54,7 @@ async function run(): Promise<boolean> {
   const startedAt = new Date().toISOString();
   const argv = await yargs
     .usage(
-      'Usage: $0 --only=[aws:bulk,aws:spot,azure:retail,gcp:catalog,gcp:machineTypes,ibm:kubernetes,ibm:catalog] [--summary <file>]'
+      'Usage: $0 --only=[aws:bulk,aws:spot,aws:odbRegions,oracle:cetools,azure:retail,gcp:catalog,gcp:machineTypes,ibm:kubernetes,ibm:catalog] [--summary <file>]'
     )
     .options({
       only: { type: 'string' },

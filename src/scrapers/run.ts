@@ -2,6 +2,8 @@ import yargs from 'yargs';
 import config from '../config';
 import awsBulk from './awsBulk';
 import awsSpot from './awsSpot';
+import odbRegions from './odbRegions';
+import oracleCetools from './oracleCetools';
 import azureRetail from './azureRetail';
 import gcpCatalog from './gcpCatalog';
 import gcpMachineTypes from './gcpMachineTypes';
@@ -18,6 +20,10 @@ const Scrapers = {
   aws: {
     bulk: awsBulk.scrape,
     spot: awsSpot.scrape,
+    odbRegions: odbRegions.scrape,
+  },
+  oracle: {
+    cetools: oracleCetools.scrape,
   },
   azure: {
     retail: azureRetail.scrape,
@@ -35,7 +41,7 @@ const Scrapers = {
 async function run(): Promise<void> {
   const argv = await yargs
     .usage(
-      'Usage: $0 --only=[aws:bulk,aws:spot,azure:retail,gcp:catalog,gcp:machineTypes,ibm:kubernetes,ibm:catalog]'
+      'Usage: $0 --only=[aws:bulk,aws:spot,aws:odbRegions,oracle:cetools,azure:retail,gcp:catalog,gcp:machineTypes,ibm:kubernetes,ibm:catalog]'
     )
     .options({
       only: { type: 'string' },
